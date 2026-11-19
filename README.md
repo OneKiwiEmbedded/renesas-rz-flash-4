@@ -23,12 +23,15 @@ Copy into this folder from `build/tmp/deploy/images/onekiwi-rzv2h-<size>/`:
 
 Start the script with the board powered off, then power it on when asked.
 
-### DIP switch SW1 (carrier board)
-| Mode | SW1-1 (MD_BOOT3) | SW1-2 (MD_BOOT1) | SW1-3 (MD_BOOT0) | SW1-4 (BOOT_SELCPU) |
-|---|:---:|:---:|:---:|:---:|
-| SCIF download (flashing) | OFF | ON | ON | ON |
-| Boot from xSPI 1.8V | OFF | ON | OFF | ON |
-| Boot from eMMC 1.8V | OFF | OFF | ON | ON |
+### DIP switch (OneKiwi EVK SOM V2H, labels BOOT3 BOOT2 BOOT1 BOOT0 = SW1..SW4)
+Measured on the board. Check the `BL2: SYS_LSI_MODE` line in the boot log:
+the low 3 bits are the real MD_BOOT[2:0] level (5 = eMMC 1.8V, 6 = xSPI 1.8V).
+
+| Mode | SW1 | SW2 | SW3 | SW4 | Label | SYS_LSI_MODE & 7 |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|
+| SCIF download (flashing) | down | down | up | up | 0 0 1 1 | 3 |
+| Boot from xSPI 1.8V | down | down | down | up | 0 0 0 1 | 6 |
+| Boot from eMMC 1.8V | down | up | up | up | 0 1 1 1 | 5 |
 
 ### xSPI RZ/V2H
 | File name | Address to load to RAM | Address to save to ROM |
