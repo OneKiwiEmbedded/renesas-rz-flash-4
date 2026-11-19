@@ -10,13 +10,24 @@ from alive_progress import alive_bar
 
 FLASH_WRITER = "Flash_Writer_SCIF_RZV2H_DEV_INTERNAL_MEMORY.mot"
 
+BL2_SPI_4GB_FILE = "bl2_bp_spi-onekiwi-rzv2h-4gb.srec"
+BL2_MMC_4GB_FILE = "bl2_bp_mmc-onekiwi-rzv2h-4gb.srec"
+FIP_4GB_FILE = "fip-onekiwi-rzv2h-4gb.srec"
+
 BL2_SPI_8GB_FILE = "bl2_bp_spi-onekiwi-rzv2h-8gb.srec"
-BL2_MMC_8GB_FILE = "bl2_bp_emmc-onekiwi-rzv2h-8gb.srec"
+BL2_MMC_8GB_FILE = "bl2_bp_mmc-onekiwi-rzv2h-8gb.srec"
 FIP_8GB_FILE = "fip-onekiwi-rzv2h-8gb.srec"
 
 BL2_SPI_16GB_FILE = "bl2_bp_spi-onekiwi-rzv2h-16gb.srec"
-BL2_MMC_16GB_FILE = "bl2_bp_emmc-onekiwi-rzv2h-16gb.srec"
+BL2_MMC_16GB_FILE = "bl2_bp_mmc-onekiwi-rzv2h-16gb.srec"
 FIP_16GB_FILE = "fip-onekiwi-rzv2h-16gb.srec"
+
+# eMMC layout (Boot Partition 1), checked against TF-A RZV2H_EMMC_FIP_BASE = 0x60000
+# and the srec start addresses (bl2_bp_mmc @ 0x08101E00, fip @ 0x00000000)
+EMMC_BL2_SECTOR = "1"
+EMMC_BL2_ADDR = "8101E00"
+EMMC_FIP_SECTOR = "300"
+EMMC_FIP_ADDR = "0"
 
 TIME = 100000000
 
@@ -26,6 +37,14 @@ RAM_TEST = 3
 
 BOARD_8GB = 1
 BOARD_16GB = 2
+BOARD_4GB = 3
+
+IMAGES = {
+    # board: (bl2 spi, bl2 emmc, fip)
+    BOARD_4GB: (BL2_SPI_4GB_FILE, BL2_MMC_4GB_FILE, FIP_4GB_FILE),
+    BOARD_8GB: (BL2_SPI_8GB_FILE, BL2_MMC_8GB_FILE, FIP_8GB_FILE),
+    BOARD_16GB: (BL2_SPI_16GB_FILE, BL2_MMC_16GB_FILE, FIP_16GB_FILE),
+}
 
 class FlashUtil:
     def __init__(self):
@@ -36,22 +55,18 @@ class FlashUtil:
         self.flash_writer_image = FLASH_WRITER
         self.total = 0
 
-        if self.flash_type == FLASH_EMMC:
-            if self.board == BOARD_8GB:
-                self.bl2_image = BL2_MMC_8GB_FILE
-            if self.board == BOARD_16GB:
-                self.bl2_image = BL2_MMC_16GB_FILE
-
         argparser = self.argparse_defaults()
         self.handle_path_overrides()
 
         if self.flash_type == 0 or self.board == 0:
             print("Utility to flash OneKiwi RZV2L RZV2N RZV2H")
             print("Example:")
+            print("    ./flash.py --spi --4gb")
             print("    ./flash.py --spi --8gb")
             print("    ./flash.py --spi --16gb")
-            #print("    ./flash.py --mmc --8gb")
-            #print("    ./flash.py --mmc --16gb")
+            print("    ./flash.py --mmc --4gb")
+            print("    ./flash.py --mmc --8gb")
+            print("    ./flash.py --mmc --16gb")
             return
         
         self.setup_serial_port()
@@ -66,6 +81,12 @@ class FlashUtil:
         # Add arguments
         # Commands
         # Serial port arguments
+        argparser.add_argument(
+            "--4gb",
+            dest="board4gb",
+            action="store_true",
+            help="Board 4GB.",
+        )
         argparser.add_argument(
             "--8gb",
             dest="board8gb",
@@ -94,7 +115,7 @@ class FlashUtil:
             "--ram",
             dest="ramTest",
             action="store_true",
-            help="Flash to eMMC.",
+            help="Run DDR/RAM test only.",
         )
         argparser.add_argument(
             "--serial_port",
@@ -127,14 +148,18 @@ class FlashUtil:
         if self.args.ramTest:
             self.flash_type = RAM_TEST
             self.total = 2
+        if self.args.board4gb:
+            self.board = BOARD_4GB
         if self.args.board8gb:
             self.board = BOARD_8GB
-            self.bl2_image = BL2_SPI_8GB_FILE
-            self.fip_image = FIP_8GB_FILE
         if self.args.board16gb:
             self.board = BOARD_16GB
-            self.bl2_image = BL2_SPI_16GB_FILE
-            self.fip_image = FIP_16GB_FILE
+
+        if self.board:
+            bl2_spi, bl2_mmc, fip = IMAGES[self.board]
+            # eMMC boot needs bl2_bp_mmc, xSPI boot needs bl2_bp_spi; FIP is shared
+            self.bl2_image = bl2_mmc if self.flash_type == FLASH_EMMC else bl2_spi
+            self.fip_image = fip
 
     def setup_serial_port(self):
         try:
@@ -293,9 +318,9 @@ class FlashUtil:
         self.wait_for_serial_read(">")
         self.write_serial_cmd("1")
         self.wait_for_serial_read(":")
-        self.write_serial_cmd("1")
+        self.write_serial_cmd(EMMC_BL2_SECTOR)
         self.wait_for_serial_read(": ")
-        self.write_serial_cmd("8101E00")
+        self.write_serial_cmd(EMMC_BL2_ADDR)
 
         self.wait_for_serial_read("stop load)")
         self.write_file_to_serial(self.bl2_image)
@@ -310,9 +335,9 @@ class FlashUtil:
         self.wait_for_serial_read(")>")
         self.write_serial_cmd("1")
         self.wait_for_serial_read(":")
-        self.write_serial_cmd("300")
+        self.write_serial_cmd(EMMC_FIP_SECTOR)
         self.wait_for_serial_read(": ")
-        self.write_serial_cmd("44000000")
+        self.write_serial_cmd(EMMC_FIP_ADDR)
 
         self.wait_for_serial_read("stop load)")
         self.write_file_to_serial(self.fip_image)
